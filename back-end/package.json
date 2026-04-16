@@ -15,10 +15,10 @@
     "@prisma/client": "^6.19.2",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
+    "csv-parse": "^6.1.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "csv-parse": "^6.1.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"

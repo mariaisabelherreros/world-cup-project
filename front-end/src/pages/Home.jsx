@@ -43,7 +43,6 @@ const StyledCard = styled(Card)(({ theme }) => ({
 }));
 export default function Home() {
   const navigate = useNavigate();
-  const userId = 1; //Replace with current userId
   const [user, setUser] = React.useState(null);
   const [inventory, setInventory] = React.useState([]);
   const [profileMenuAnchor, setProfileMenuAnchor] = React.useState(null);
@@ -57,18 +56,32 @@ export default function Home() {
   React.useEffect(() => {
     const fetchUser = async () => {
       try {
-        const response = await fetch(`http://localhost:4000/users/${userId}`);
+        const storedUser = JSON.parse(localStorage.getItem('user'));
+        const token = localStorage.getItem('token');
+        
+        if (!storedUser || !storedUser.id) {
+          navigate("/login");
+          return;
+        }
+    
+        const response = await fetch(`http://localhost:4000/users/${storedUser.id}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         const data = await response.json();
+        
         if (response.ok) {
           setUser(data);
         }
       } catch (error) {
         console.error("Failed to fetch user:", error);
-        navigate("/register");
+        navigate("/login");
       }
     };
+    
     fetchUser();
-  }, [userId, navigate]);
+  }, [navigate]);
 
   React.useEffect(() => {
     if (user && user.id) {

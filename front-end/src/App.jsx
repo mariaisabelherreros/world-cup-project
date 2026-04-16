@@ -4,7 +4,6 @@ import AppLayout from "./layouts/AppLayout";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
-import {Dashboard} from "@mui/icons-material";
 import Home from './pages/Home';
 import CommunityPage from './pages/CommunityPage';
 
@@ -16,7 +15,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<Navigate to="/register" />} />
+            <Route path="/" element={<Navigate to="/login" />} />
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot_password" element={<ForgotPassword />} />

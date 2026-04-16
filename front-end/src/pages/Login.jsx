@@ -88,6 +88,8 @@ export default function Login() {
             const result = await response.json();
 
             if (result.ok) {
+                localStorage.setItem('token', result.token);
+                localStorage.setItem('user', JSON.stringify(result.user));
                 navigate("/home");
             } else {
                 alert(result.message || "Invalid credentials");

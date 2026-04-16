@@ -11,12 +11,19 @@ import DarkModeIcon from "@mui/icons-material/DarkMode";
 import { getTheme } from "../theme/theme";
 
 export default function AppLayout() {
-  const [mode, setMode] = React.useState("light");
+  const [mode, setMode] = React.useState(() => {
+    const savedMode = localStorage.getItem("theme-mode");
+    return savedMode || "light";
+  });
 
   const theme = React.useMemo(() => getTheme(mode), [mode]);
 
   const toggleTheme = () => {
-    setMode((prev) => (prev === "light" ? "dark" : "light"));
+    setMode((prev) => {
+      const newMode = prev === "light" ? "dark" : "light";
+      localStorage.setItem("theme-mode", newMode);
+      return newMode;
+    });
   };
 
   const gradient =

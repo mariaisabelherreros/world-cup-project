@@ -1,5 +1,7 @@
 const { PrismaClient } = require("@prisma/client");
 const { openCardPack } = require("./src/openCardPack.ts");
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 const prisma = new PrismaClient();
 
@@ -74,20 +76,42 @@ app.post("/login", async (req, res) => {
 
     const {password: _, ...safeUser} = existingUser;
 
-    res.json({ok: true, user: safeUser});
+    const token = jwt.sign(
+      { userId: existingUser.id, email: existingUser.email },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({ok: true, user: safeUser, token});
 
   } catch (error) {
     console.error(error);
     res.status(500).json({ok: false, message: "An error occurred during login."})}});
 
+    const authenticateToken = (req, res, next) => {
+      const authHeader = req.headers['authorization'];
+      const token = authHeader && authHeader.split(' ')[1];
+    
+      if (!token) return res.status(401).json({ok: false, message: "No token provided"});
+    
+      jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ok: false, message: "Invalid token"});
+        req.user = user;
+        next();
+      });
+    };
 
-app.get("/users/:id", async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: parseInt(req.params.id) },
-  });
-  res.json(user);
-});
-
+    app.get("/users/:id", authenticateToken, async (req, res) => {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: parseInt(req.params.id) },
+        });
+        if (!user) return res.status(404).json({ok: false, message: "User not found"});
+        res.json(user);
+      } catch (error) {
+        res.status(500).json({ok: false, message: "Failed to fetch user"});
+      }
+    });
 app.get("/api/inventory/:id", async (req, res) => {
   const userId = parseInt(req.params.id);
 
