@@ -88,7 +88,7 @@ export default function Login() {
             const result = await response.json();
 
             if (result.ok) {
-                navigate("/dashboard");
+                navigate("/home");
             } else {
                 alert(result.message || "Invalid credentials");
             }
