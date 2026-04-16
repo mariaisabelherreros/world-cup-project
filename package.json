@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/mariaisabelherreros/world-cup-project#readme",
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "concurrently": "^9.2.1"
   },
   "dependencies": {

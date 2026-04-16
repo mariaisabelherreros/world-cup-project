@@ -30,7 +30,7 @@ export default function AppLayout() {
 
       <IconButton
         onClick={toggleTheme}
-        sx={{ position: "fixed", top: 16, right: 16 }}
+        sx={{ position: "fixed", top: 16, right: 16, zIndex: 1300 }}
       >
         {mode === "light" ? <DarkModeIcon /> : <LightModeIcon />}
       </IconButton>

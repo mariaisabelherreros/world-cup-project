@@ -14,19 +14,19 @@ datasource db {
 }
 
 model User {
-  id         Int         @id @default(autoincrement())
-  email      String      @unique
-  username   String      @unique
-  password   String
-  bio        String?
-  profilePic String?
-  currency   Int         @default(0)
-  isAdmin    Boolean     @default(false)
-  isPublic   Boolean     @default(false)
-  createdAt  DateTime    @default(now())
-  Token      Token[]
-  Inventory  Inventory[]
-  tradeList  TradeList[]
+  id           Int            @id @default(autoincrement())
+  email        String         @unique
+  username     String         @unique
+  password     String
+  bio          String? 
+  profilePic   String?
+  currency     Int            @default(0)
+  isAdmin      Boolean        @default(false)
+  isPublic     Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  Token        Token[]
+  Inventory    Inventory[]
+  tradeList    TradeList[]
 }
 
 model Token {
@@ -39,42 +39,41 @@ model Token {
 }
 
 model Card {
-  id          Int    @id @default(autoincrement())
-  short_name  String
-  long_name   String
-  rating      Int
-  nationality String
-  positions   String
+  id              Int         @id @default(autoincrement())
+  short_name      String
+  long_name       String
+  rating          Int
+  nationality     String
+  positions       String
 
   //Physical Stats
-  age       Int
-  height_cm Int
-  weight_kg Int
-  foot      String
+  age             Int
+  height_cm       Int
+  weight_kg       Int
+  foot            String
 
   // Game Stats
-  pace      Int
-  shooting  Int
-  passing   Int
-  dribbling Int
-  defending Int
-  physical  Int
+  pace             Int
+  shooting         Int
+  passing          Int
+  dribbling        Int
+  defending        Int
+  physical         Int
 
-  playerFaceURL   String
+  playerImageURL  String
   setCode         String?
   collectorNumber String?
-  inventoryItems  Inventory[]
+  inventoryItems  Inventory[] 
   tradeList       TradeList[]
 }
 
 model Inventory {
-  id       Int  @id @default(autoincrement())
-  cardId   Int
-  userId   Int
-  card     Card @relation(fields: [cardId], references: [id])
-  user     User @relation(fields: [userId], references: [id])
-  quantity Int  @default(1)
-
+  id  Int          @id @default(autoincrement())
+  cardId        Int
+  userId        Int
+  card          Card         @relation(fields: [cardId], references: [id])
+  user          User         @relation(fields: [userId], references: [id])
+  quantity      Int          @default(1)
   @@unique([userId, cardId])
 }
 
