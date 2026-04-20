@@ -191,15 +191,138 @@ app.post("/login", async (req, res) => {
 
     app.get("/users/:id", authenticateToken, async (req, res) => {
       try {
+        const requestedId = parseInt(req.params.id, 10);
+
+        if (!Number.isInteger(requestedId)) {
+          return res.status(400).json({ ok: false, message: "Invalid user id" });
+        }
+
+        // Users can read their own record; admins can read any record.
+        const requesterId = Number(req.user.userId);
+        const requesterEmail = req.user.email;
+
+        if (requesterId !== requestedId) {
+          const requester = await prisma.user.findUnique({
+            where: { id: requesterId },
+            select: { isAdmin: true, email: true },
+          });
+
+          if (!requester || !requester.isAdmin || requester.email !== requesterEmail) {
+            return res.status(403).json({ ok: false, message: "Forbidden" });
+          }
+        }
+
         const user = await prisma.user.findUnique({
-          where: { id: parseInt(req.params.id) },
+          where: { id: requestedId },
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            bio: true,
+            profilePic: true,
+            currency: true,
+            isAdmin: true,
+            isPublic: true,
+            createdAt: true,
+          },
         });
+
         if (!user) return res.status(404).json({ok: false, message: "User not found"});
         res.json(user);
       } catch (error) {
         res.status(500).json({ok: false, message: "Failed to fetch user"});
       }
     });
+
+app.patch("/users/me/profile", authenticateToken, async (req, res) => {
+  const bioInput = typeof req.body.bio === "string" ? req.body.bio : "";
+  const profilePicInput = typeof req.body.profilePic === "string" ? req.body.profilePic : "";
+
+  const bio = bioInput.trim().slice(0, 500);
+  const profilePic = profilePicInput.trim().slice(0, 1000);
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: Number(req.user.userId) },
+      data: {
+        bio,
+        profilePic: profilePic || null,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        bio: true,
+        profilePic: true,
+        currency: true,
+        isAdmin: true,
+        isPublic: true,
+        createdAt: true,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      message: "Profile updated successfully.",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to update profile right now.",
+    });
+  }
+});
+
+app.post("/users/me/change-password", authenticateToken, async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || "");
+  const newPassword = String(req.body.newPassword || "");
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({
+      ok: false,
+      message: "Current and new password are required.",
+    });
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({
+      ok: false,
+      message: "New password must be at least 8 characters.",
+    });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: Number(req.user.userId) },
+      select: { id: true, password: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, message: "User not found." });
+    }
+
+    const matches = await bcrypt.compare(currentPassword, user.password);
+    if (!matches) {
+      return res.status(400).json({ ok: false, message: "Current password is incorrect." });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
+
+    return res.json({ ok: true, message: "Password changed successfully." });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to change password right now.",
+    });
+  }
+});
 
 app.post("/forgot-password", async (req, res) => {
   const emailInput = (req.body.email || "").trim().toLowerCase();
