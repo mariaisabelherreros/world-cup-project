@@ -47,6 +47,8 @@ export default function Register() {
   const [nameError, setNameError] = React.useState(false);
   const [nameErrorMessage, setNameErrorMessage] = React.useState('');
   const [existingAccountError, setExistingAccountError] = React.useState(false);
+  const [bannedEmailError, setBannedEmailError] = React.useState(false);
+
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -123,7 +125,11 @@ export default function Register() {
         navigate("/login");
       } else {
         const result = await response.json();
-        setExistingAccountError(true);
+        if (result.includes("banned")) {
+          setBannedEmailError(true);
+        } else {
+          setExistingAccountError(true);
+        }    
       }
     } catch (error) {
       console.error("Server error during registration:", error);
@@ -147,7 +153,7 @@ export default function Register() {
             sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
         >
           {existingAccountError && <Alert severity="error"> Username/Email already in use! </Alert>}
-
+          {bannedEmailError && <Alert severity="error">This email has been banned from the platform.</Alert>}
           <FormControl>
             <FormLabel htmlFor="username">Username</FormLabel>
             <TextField

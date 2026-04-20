@@ -54,6 +54,16 @@ export default function Home() {
   const [isSellDialogOpen, setIsSellDialogOpen] = React.useState(false);
 
   React.useEffect(() => {
+    const handleOpenPack = (event) => {
+      const { packSize, packCost } = event.detail;
+      handleOpenCardPack(packSize, packCost);
+    };
+
+    window.addEventListener("openPack", handleOpenPack);
+    return () => window.removeEventListener("openPack", handleOpenPack);
+  }, [user]);
+  
+  React.useEffect(() => {
     const fetchUser = async () => {
       try {
         const storedUser = JSON.parse(localStorage.getItem('user'));
@@ -216,104 +226,6 @@ export default function Home() {
       sx={{ minHeight: "100vh", width: "75%", bgcolor: "background.default" }}
     >
       <Box sx={{ position: "relative", overflow: "hidden" }}>
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 2,
-            width: "100%",
-            py: 4,
-          }}
-        >
-          <Box
-            component="img"
-            sx={{ height: 60, width: "auto" }}
-            alt="Icon Left"
-            src="../src/assets/SoccerBall.png"
-          />
-          <Typography
-            variant="h3"
-            sx={{
-              fontWeight: "bold",
-              color: "text.primary",
-            }}
-          >
-            Pocket Players
-          </Typography>
-
-          <Box
-            component="img"
-            sx={{ height: 60, width: "auto" }}
-            alt="Icon Right"
-            src="../src/assets/SoccerBall.png"
-          />
-        </Box>
-        <AppBar
-          position="static"
-          elevation={0}
-          sx={{ borderBottom: "1px solid", borderColor: "divider" }}
-        >
-          <Toolbar>
-            <Box sx={{ display: "flex", flex: 1 }}>
-              <Button
-                sx={{ mr: 2 }}
-                color="inherit"
-                startIcon={<PeopleIcon />}
-                onClick={() => navigate("/community")}
-              >
-                Community
-              </Button>
-              <Button
-                color="inherit"
-                startIcon={<LibraryBooksIcon />}
-                onClick={() => handleOpenCardPack(5, 0)}
-              >
-                Open Pack
-              </Button>
-            </Box>
-            <Typography
-              variant="h6"
-              component="div"
-              sx={{
-                fontWeight: "bold",
-                textAlign: "center",
-                position: "absolute",
-                left: "50%",
-                transform: "translateX(-50%)",
-              }}
-            >
-              Total Funds
-              <br />
-              {user ? user.currency : 0}
-            </Typography>
-
-            <Box>
-              <Button
-                color="inherit"
-                onClick={handleProfileMenuOpen}
-                startIcon={<AccountCircle />}
-                sx={{ display: "flex", flex: 1, justifyContent: "flex-end" }}
-              >
-                {user ? user.username : "Loading..."}
-              </Button>
-              <Menu
-                anchorEl={profileMenuAnchor}
-                open={open}
-                onClose={handleProfileMenuClose}
-              >
-                <MenuItem onClick={handleProfileMenuClose}>
-                  Profile Page
-                </MenuItem>
-                <MenuItem onClick={() => navigate("/register")}>
-                  Logout
-                </MenuItem>
-              </Menu>
-            </Box>
-          </Toolbar>
-        </AppBar>
-
         <Box sx={{ p: 4 }}>
           {nationalities.map((nation) => (
             <Box key={nation} sx={{ mb: 6 }}>

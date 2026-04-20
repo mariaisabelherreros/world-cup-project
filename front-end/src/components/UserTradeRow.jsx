@@ -31,7 +31,7 @@ const UserTradeRow = ({ user }) => {
     <TradeRowCard variant="outlined">
       <Stack direction="row" spacing={2} alignItems="center">
         <Avatar
-          src={user.pfp}
+          src={user.profilePic}
           alt={user.username}
           sx={{ width: 56, height: 56 }}
         />
@@ -72,24 +72,24 @@ const UserTradeRow = ({ user }) => {
           },
         }}
       >
-        {user.tradableCards.map((card) => (
-          <Card key={card.id} sx={{ minWidth: 120, maxWidth: 120 }}>
+        {user.tradeList.map((item) => (
+          <Card key={item.id} sx={{ minWidth: 120, maxWidth: 120 }}>
             <CardActionArea onClick={() => {}}>
               <CardMedia
                 component="img"
                 height="140"
-                image={card.image}
-                alt={card.playerName}
+                image={item.card.playerImageURL}
+                alt={item.card.short_name}
               />
               <Box sx={{ p: 1 }}>
                 <Typography variant="caption" display="block" fontWeight="bold">
-                  {card.playerName}
+                  {item.card.short_name}
                 </Typography>
                 <Typography variant="caption" display="block">
-                  {card.nationality}
+                  {item.card.nationality}
                 </Typography>
                 <Typography variant="caption" display="block">
-                  {card.rarity}
+                  {item.card.rating}
                 </Typography>
               </Box>
             </CardActionArea>
