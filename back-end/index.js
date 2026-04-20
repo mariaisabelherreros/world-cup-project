@@ -1,7 +1,14 @@
+require("dotenv").config();
+
 const { PrismaClient } = require("@prisma/client");
 const { openCardPack } = require("./src/openCardPack.ts");
-const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+const crypto = require("crypto");
+
+const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+const PORT = Number(process.env.PORT || 4000);
 
 const prisma = new PrismaClient();
 
@@ -10,12 +17,48 @@ const cors = require("cors");
 const app = express();
 const bcrypt = require("bcrypt");
 const saltRounds = 10;
-PORT = 4000;
+
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: SMTP_SECURE,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+})
+
+const logSentMail = (info, to, subject) => {
+  const previewUrl = nodemailer.getTestMessageUrl(info);
+  console.log("[MAIL] Forgot-password email sent");
+  console.log("  to:", to);
+  console.log("  subject:", subject);
+  console.log("  messageId:", info.messageId);
+  if (previewUrl) {
+    console.log("  preview:", previewUrl);
+  } else {
+    console.log("  response:", info.response || "(no SMTP response)");
+  }
+};
+
+const allowedOrigins = new Set([
+  FRONTEND_URL,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+]);
 
 app.use(express.json());
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin(origin, callback) {
+      // Allow server-to-server requests with no Origin header.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
@@ -112,6 +155,77 @@ app.post("/login", async (req, res) => {
         res.status(500).json({ok: false, message: "Failed to fetch user"});
       }
     });
+
+app.post("/forgot-password", async (req, res) => {
+  const emailInput = (req.body.email || "").trim().toLowerCase();
+  const usernameInput = (req.body.username || "").trim();
+
+  // Exactly one identifier must be provided.
+  if ((!emailInput && !usernameInput) || (emailInput && usernameInput)) {
+    return res.status(400).json({
+      ok: false,
+      message: "Provide either email or username.",
+    });
+  }
+
+  try {
+    const user = await prisma.user.findFirst({
+      where: emailInput
+          ? { email: emailInput }
+          : { username: usernameInput },
+    });
+
+    // Always return generic success to prevent account enumeration.
+    if (!user) {
+      return res.json({
+        ok: true,
+        message: "If an account exists, a reset email has been sent.",
+      });
+    }
+
+    // Create one-time token (store with expiry in DB).
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 mins
+
+    await prisma.token.create({
+      data: {
+        userId: user.id,
+        token: resetToken,
+        expiredAt: expiresAt,
+      },
+    });
+
+    const resetLink = `${FRONTEND_URL}/reset-password?token=${encodeURIComponent(
+        resetToken
+    )}`;
+
+    const subject = "Reset your password";
+    const text = `Use this link to reset your password: ${resetLink}\nThis link expires in 30 minutes.`;
+    const html = `<p>Click to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p><p>This link expires in 30 minutes.</p>`;
+
+    const mailInfo = await mailer.sendMail({
+      from: process.env.MAIL_FROM || "no-reply@worldcup.local",
+      to: user.email,
+      subject,
+      text,
+      html,
+    });
+    logSentMail(mailInfo, user.email, subject);
+
+    return res.json({
+      ok: true,
+      message: "If an account exists, a reset email has been sent.",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to process request right now.",
+    });
+  }
+});
+
+
 app.get("/api/inventory/:id", async (req, res) => {
   const userId = parseInt(req.params.id);
 
@@ -191,6 +305,65 @@ app.post("/api/sell-card", async (req, res) => {
   } catch (error) {
     console.error("Sell error:", error);
     res.status(500).json({ error: "Failed to process sale" });
+  }
+});
+
+app.post("/reset-password", async (req, res) => {
+  const tokenInput = String(req.body.token || "").trim();
+  const newPassword = String(req.body.newPassword || "");
+
+  if (!tokenInput) {
+    return res.status(400).json({ ok: false, message: "Reset token is required." });
+  }
+
+  if (!newPassword || newPassword.length < 8) {
+    return res.status(400).json({
+      ok: false,
+      message: "Password must be at least 8 characters.",
+    });
+  }
+
+  try {
+    const now = new Date();
+    const tokenRecord = await prisma.token.findFirst({
+      where: {
+        token: tokenInput,
+        OR: [{ expiredAt: null }, { expiredAt: { gt: now } }],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!tokenRecord) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid or expired reset token.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: tokenRecord.userId },
+        data: { password: hashedPassword },
+      });
+
+      // Invalidate all reset tokens for this user after successful password update.
+      await tx.token.deleteMany({
+        where: { userId: tokenRecord.userId },
+      });
+    });
+
+    return res.json({
+      ok: true,
+      message: "Password successfully reset, click here to return to login.",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to reset password right now.",
+    });
   }
 });
 
