@@ -40,7 +40,13 @@ export default function AppLayout() {
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
   const isTablet = useMediaQuery(muiTheme.breakpoints.down('md'));
 
-  const isPageAfterLogin = location.pathname !== "/login" && location.pathname !== "/register" && location.pathname !== "/forgot_password";
+  const publicAuthPages = new Set([
+    "/login",
+    "/register",
+    "/forgot_password",
+    "/reset_password",
+  ]);
+  const isPageAfterLogin = !publicAuthPages.has(location.pathname);
   const isHomePage = location.pathname === "/home";
 
   const toggleTheme = () => {

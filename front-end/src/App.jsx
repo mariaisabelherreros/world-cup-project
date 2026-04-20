@@ -6,7 +6,8 @@ import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import Home from './pages/Home';
-import CommunityPage from './pages/CommunityPage';
+import CommunityPage from './pages/Community';
+import Admin from './pages/Admin';
 
 
 
@@ -20,7 +21,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot_password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/reset_password" element={<ResetPassword />} />
             <Route path="/home" element={<Home />} />
             <Route path="/community" element={<CommunityPage />} />
             <Route path="/admin" element={<Admin />} />

@@ -5,9 +5,10 @@ require("dotenv").config();
 const { openCardPack } = require("./src/openCardPack.ts");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
-const crypto = require("crypto");
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+const RESET_PASSWORD_SECRET = process.env.RESET_PASSWORD_SECRET || JWT_SECRET;
+const RESET_PASSWORD_EXPIRES_IN = process.env.RESET_PASSWORD_EXPIRES_IN || "30m";
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 const PORT = Number(process.env.PORT || 4000);
 
@@ -214,9 +215,7 @@ app.post("/forgot-password", async (req, res) => {
 
   try {
     const user = await prisma.user.findFirst({
-      where: emailInput
-          ? { email: emailInput }
-          : { username: usernameInput },
+      where: emailInput ? { email: emailInput } : { username: usernameInput },
     });
 
     // Always return generic success to prevent account enumeration.
@@ -227,20 +226,18 @@ app.post("/forgot-password", async (req, res) => {
       });
     }
 
-    // Create one-time token (store with expiry in DB).
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 30); // 30 mins
-
-    await prisma.token.create({
-      data: {
+    const resetToken = jwt.sign(
+      {
+        purpose: "reset_password",
         userId: user.id,
-        token: resetToken,
-        expiredAt: expiresAt,
+        email: user.email,
       },
-    });
+      RESET_PASSWORD_SECRET,
+      { expiresIn: RESET_PASSWORD_EXPIRES_IN },
+    );
 
-    const resetLink = `${FRONTEND_URL}/reset-password?token=${encodeURIComponent(
-        resetToken
+    const resetLink = `${FRONTEND_URL}/reset_password?token=${encodeURIComponent(
+      resetToken,
     )}`;
 
     const subject = "Reset your password";
@@ -412,7 +409,7 @@ app.delete("/admin/users/:id", async (req, res) => {
   }
 });
 
-app.post("/reset-password", async (req, res) => {
+app.post("/reset_password", async (req, res) => {
   const tokenInput = String(req.body.token || "").trim();
   const newPassword = String(req.body.newPassword || "");
 
@@ -428,16 +425,21 @@ app.post("/reset-password", async (req, res) => {
   }
 
   try {
-    const now = new Date();
-    const tokenRecord = await prisma.token.findFirst({
-      where: {
-        token: tokenInput,
-        OR: [{ expiredAt: null }, { expiredAt: { gt: now } }],
-      },
-      orderBy: { createdAt: "desc" },
+    const decoded = jwt.verify(tokenInput, RESET_PASSWORD_SECRET);
+
+    if (!decoded || decoded.purpose !== "reset_password" || !decoded.userId) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid or expired reset token.",
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: Number(decoded.userId) },
+      select: { id: true, email: true },
     });
 
-    if (!tokenRecord) {
+    if (!user || (decoded.email && decoded.email !== user.email)) {
       return res.status(400).json({
         ok: false,
         message: "Invalid or expired reset token.",
@@ -446,16 +448,9 @@ app.post("/reset-password", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
-    await prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: tokenRecord.userId },
-        data: { password: hashedPassword },
-      });
-
-      // Invalidate all reset tokens for this user after successful password update.
-      await tx.token.deleteMany({
-        where: { userId: tokenRecord.userId },
-      });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
     });
 
     return res.json({
@@ -463,6 +458,13 @@ app.post("/reset-password", async (req, res) => {
       message: "Password successfully reset, click here to return to login.",
     });
   } catch (error) {
+    if (error.name === "TokenExpiredError" || error.name === "JsonWebTokenError") {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid or expired reset token.",
+      });
+    }
+
     console.error("Reset password error:", error);
     return res.status(500).json({
       ok: false,
