@@ -2,7 +2,6 @@ const { PrismaClient } = require('@prisma/client')
 const { withAccelerate } = require('@prisma/extension-accelerate');
 require("dotenv").config();
 
-const { PrismaClient } = require("@prisma/client");
 const { openCardPack } = require("./src/openCardPack.ts");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
@@ -19,7 +18,6 @@ const cors = require("cors");
 const app = express();
 const bcrypt = require("bcrypt");
 const saltRounds = 10;
-const PORT = 4000;
 
 const SMTP_SECURE = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
 const mailer = nodemailer.createTransport({
