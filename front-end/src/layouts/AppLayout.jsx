@@ -107,6 +107,24 @@ export default function AppLayout() {
     navigate("/admin");
   }
 
+  const handleBuyPackClick = () => {
+    if (!user) {
+      alert("User data not loaded");
+      return;
+    }
+
+    if (user.currency < 10000) {
+      alert(`Insufficient funds! You need 10,000 currency but only have ${user.currency}.`);
+      return;
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("openPack", {
+        detail: { packSize: 5, packCost: 10000 },
+      })
+    );
+  };
+
   const gradient =
     mode === "light"
       ? "radial-gradient(ellipse at 50% 40%, hsl(210,100%,97%), white)"
@@ -206,15 +224,9 @@ export default function AppLayout() {
                     fontSize: isMobile ? "0.75rem" : "1rem",
                     padding: isMobile ? "4px 8px" : "6px 16px",
                   }}
-                  onClick={() => {
-                    window.dispatchEvent(
-                      new CustomEvent("openPack", {
-                        detail: { packSize: 5, packCost: 0 },
-                      })
-                    );
-                  }}
+                  onClick={handleBuyPackClick}
                 >
-                  {!isMobile && "Open Pack"}
+                  {!isMobile && "Buy Pack"}
                 </Button>
               )}
             </Box>

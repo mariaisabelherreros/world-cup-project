@@ -15,18 +15,19 @@ datasource db {
 }
 
 model User {
-  id           Int            @id @default(autoincrement())
-  email        String         @unique
-  username     String         @unique
-  password     String
-  bio          String? 
-  profilePic   String?
-  currency     Int            @default(0)
-  isAdmin      Boolean        @default(false)
-  isPublic     Boolean        @default(false)
-  createdAt    DateTime       @default(now())
-  Inventory    Inventory[]
-  tradeList    TradeList[]
+  id            Int            @id @default(autoincrement())
+  email         String         @unique
+  username      String         @unique
+  password      String
+  bio           String? 
+  profilePic    String?
+  currency      Int            @default(0)
+  isAdmin       Boolean        @default(false)
+  isPublic      Boolean        @default(false)
+  lastDailyPack DateTime       @default(now())
+  createdAt     DateTime       @default(now())
+  Inventory     Inventory[]
+  tradeList     TradeList[]
 }
 
 model BannedEmail {
