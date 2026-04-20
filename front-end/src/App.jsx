@@ -21,9 +21,9 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/forgot_password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/reset_password" element={<ResetPassword />} />
             <Route path="/home" element={<Home />} />
             <Route path="/community" element={<CommunityPage />} />
+            <Route path="/admin" element={<Admin />} />
           </Route>
         </Routes>
       </BrowserRouter>
