@@ -14,6 +14,7 @@ import {
   Modal,
   styled,
   IconButton,
+  Divider,
 } from "@mui/material";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import AccountCircle from "@mui/icons-material/AccountCircle";
@@ -57,7 +58,18 @@ export default function Home() {
   const [selectedCardMenuItem, setSelectedCardMenuItem] = React.useState(null);
   const [isSellDialogOpen, setIsSellDialogOpen] = React.useState(false);
   const [cardPackMessage, setCardPackMessage] = React.useState("");
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = React.useState(false);
+  const [detailCard, setDetailCard] = React.useState(null);
 
+  const handleOpenDetail = (item) => {
+    setDetailCard(item.card);
+    setIsDetailDialogOpen(true);
+  };
+
+  const handleCloseDetail = () => {
+    setIsDetailDialogOpen(false);
+    setDetailCard(null);
+  };
   React.useEffect(() => {
     if (contextUser) {
       setUser(contextUser);
@@ -97,7 +109,6 @@ export default function Home() {
         const invData = await invRes.json();
         setInventory(invData);
         
-        // Update BOTH local and context user
         const updatedUser = {
           ...user,
           currency: data.newCurrency,
@@ -136,14 +147,14 @@ export default function Home() {
         .then((data) => {
           setInventory(data);
 
-          // Welcome pack: new user with empty inventory and 0 currency
+          // Welcome pack
           if (data.length === 0 && user.currency === 0) {
             console.log("Opening welcome pack for new user");
             setCardPackMessage("Welcome Starter Pack!");
             handleOpenCardPack(10, 0);
           }
 
-          // // Daily pack: user has items and last pack was before today's midnight
+          // Daily pack
           else if (data.length > 0 && user.lastDailyPack) {
             const lastPack = new Date(user.lastDailyPack);
             lastPack.setHours(0, 0, 0, 0);
@@ -284,11 +295,14 @@ export default function Home() {
                 {groupedInventory[nation].map((item) => (
                   <Grid item xs={12} sm={6} md={3} key={item.id}>
                     <Card
+                      
+                      onClick ={() => handleOpenDetail(item)}
                       sx={{
                         width: 200,
                         height: 325,
                         display: "flex",
                         flexDirection: "column",
+                        cursor: "pointer",
                         transition: "transform 0.2s",
                         "&:hover": {
                           transform: "scale(1.05)",
@@ -298,7 +312,7 @@ export default function Home() {
                     >
                       <IconButton
                         aria-label="settings"
-                        onClick={(e) => handleCardMenuOpen(e, item)}
+                        onClick={(e) => {e.stopPropagation(); handleCardMenuOpen(e, item)}}
                         sx={{
                           position: "absolute",
                           top: 5,
@@ -317,7 +331,7 @@ export default function Home() {
                         onError={(e) => {
                           e.currentTarget.src = "../src/assets/PlaceholderPlayerImage.png";
                         }}
-                        sx={{ objectFit: "cover" }}
+                        sx={{ objectFit: "cover"}}
                       />
                       <CardContent sx={{ flexGrow: 1, textAlign: "center" }}>
                         <Typography
@@ -376,7 +390,8 @@ export default function Home() {
             <Grid container spacing={2} justifyContent="center">
               {openCards.map((card, index) => (
                 <Grid item key={index}>
-                  <Card sx={{ width: 180, height: 300 }}>
+                  <Card 
+                  sx={{ width: 180, height: 300}}>
                     <Typography variant="h7" display="block" color="primary">
                       {card.nationality}
                     </Typography>
@@ -499,6 +514,131 @@ export default function Home() {
           </Button>
         </DialogActions>
       </Dialog>
+      {/* Player Detail Dialog */}
+<Dialog 
+  open={isDetailDialogOpen} 
+  onClose={handleCloseDetail}
+  maxWidth="sm"
+  fullWidth
+>
+<DialogContent sx={{ p: 0, overflow: "hidden" }}>
+  <Grid 
+    container 
+    sx={{ 
+      display: "flex", 
+      flexDirection: { xs: "column", md: "row" }, 
+      flexWrap: "nowrap", 
+      minHeight: 400
+    }}
+  >
+    {/* LEFT SIDE: Image Column */}
+    <Grid 
+      item 
+      sx={{ 
+        width: { xs: "100%", md: "260px" }, 
+        flexShrink: 0, 
+        bgcolor: "#000", 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "center",
+        p: 2
+      }}
+    >
+      <Box
+        sx={{ 
+          width: "220px", 
+          height: "330px", 
+          borderRadius: 2,
+          overflow: "hidden",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+          bgcolor: "#1a1a1a",
+          display: "flex"
+        }}
+      >
+        <Box
+          component="img"
+          src={detailCard?.playerImageURL || "../src/assets/PlaceholderPlayerImage.png"}
+          onError={(e) => { 
+            e.currentTarget.src = "../src/assets/PlaceholderPlayerImage.png"; 
+          }}
+          sx={{ 
+            width: "100%", 
+            height: "100%", 
+            objectFit: "cover",
+            objectPosition: "center"
+          }}
+        />
+      </Box>
+    </Grid>
+      {/* RIGHT SIDE: Details */}
+      <Grid item xs={12} md={8} sx={{ p: 3, bgcolor: "background.paper" }}>
+        <Box sx={{ mb: 1 }}>
+          <Typography variant="h5" sx={{ fontWeight: "bold", color: "text.primary" }}>
+            {detailCard?.long_name || detailCard?.short_name}
+          </Typography>
+          <Typography variant="subtitle1" color="primary" sx={{ fontWeight: "bold" }}>
+            {detailCard?.positions} • Rating: {detailCard?.rating}
+          </Typography>
+        </Box>
+
+        <Divider sx={{ my: 1.5 }} />
+
+        {/* Bio Grid */}
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          {[
+            { label: "Nationality", value: detailCard?.nationality },
+            { label: "Foot", value: detailCard?.foot },
+            { label: "Age", value: `${detailCard?.age}y` },
+            { label: "Height", value: `${detailCard?.height_cm}cm` },
+          ].map((item) => (
+            <Grid item xs={6} key={item.label}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", textTransform: "uppercase" }}>
+                {item.label}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: "bold" }}>
+                {item.value || "N/A"}
+              </Typography>
+            </Grid>
+          ))}
+        </Grid>
+
+        {/* Game Stats */}
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1, fontWeight: "bold" }}>
+          GAME ATTRIBUTES
+        </Typography>
+        <Grid container spacing={1}>
+          {[
+            { label: "PAC", val: detailCard?.pace },
+            { label: "SHO", val: detailCard?.shooting },
+            { label: "PAS", val: detailCard?.passing },
+            { label: "DRI", val: detailCard?.dribbling },
+            { label: "DEF", val: detailCard?.defending },
+            { label: "PHY", val: detailCard?.physical },
+          ].map((stat) => (
+            <Grid item xs={4} key={stat.label}>
+              <Box sx={{ 
+                textAlign: "center", 
+                p: 1, 
+                bgcolor: "action.hover", 
+                borderRadius: 1,
+                borderBottom: `3px solid ${stat.val >= 80 ? '#4caf50' : '#1976d2'}`
+              }}>
+                <Typography variant="caption" sx={{ fontWeight: "bold" }}>{stat.label}</Typography>
+                <Typography variant="h6" sx={{ lineHeight: 1.2 }}>{stat.val}</Typography>
+              </Box>
+            </Grid>
+          ))}
+        </Grid>
+
+        <Box sx={{ mt: 3, textAlign: "right" }}>
+          <Button variant="contained" fullWidth onClick={handleCloseDetail} sx={{ py: 1 }}>
+            Close
+          </Button>
+        </Box>
+      </Grid>
+    </Grid>
+  </DialogContent>
+</Dialog>
     </Box>
   );
 }
