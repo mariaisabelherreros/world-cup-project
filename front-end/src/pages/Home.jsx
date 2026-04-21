@@ -21,7 +21,10 @@ import PeopleIcon from "@mui/icons-material/People";
 import StyleIcon from "@mui/icons-material/Style";
 import InventoryIcon from "@mui/icons-material/Inventory";
 import LibraryBooksIcon from "@mui/icons-material/LibraryBooks";
-import { useNavigate } from "react-router-dom";
+import { 
+  useNavigate,
+  useOutletContext,
+ } from "react-router-dom";
 import {
   Dialog,
   DialogTitle,
@@ -43,6 +46,7 @@ const StyledCard = styled(Card)(({ theme }) => ({
 }));
 export default function Home() {
   const navigate = useNavigate();
+  const { user: contextUser, setUser: setContextUser } = useOutletContext();
   const [user, setUser] = React.useState(null);
   const [inventory, setInventory] = React.useState([]);
   const [profileMenuAnchor, setProfileMenuAnchor] = React.useState(null);
@@ -52,66 +56,20 @@ export default function Home() {
   const [cardMenuAnchor, setCardMenuAnchor] = React.useState(null);
   const [selectedCardMenuItem, setSelectedCardMenuItem] = React.useState(null);
   const [isSellDialogOpen, setIsSellDialogOpen] = React.useState(false);
+  const [cardPackMessage, setCardPackMessage] = React.useState("");
 
   React.useEffect(() => {
-    const handleOpenPack = (event) => {
-      const { packSize, packCost } = event.detail;
-      handleOpenCardPack(packSize, packCost);
-    };
-
-    window.addEventListener("openPack", handleOpenPack);
-    return () => window.removeEventListener("openPack", handleOpenPack);
-  }, [user]);
-  
-  React.useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const storedUser = JSON.parse(localStorage.getItem('user'));
-        const token = localStorage.getItem('token');
-        
-        if (!storedUser || !storedUser.id) {
-          navigate("/login");
-          return;
-        }
-    
-        const response = await fetch(`http://localhost:4000/users/${storedUser.id}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        const data = await response.json();
-        
-        if (response.ok) {
-          setUser(data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch user:", error);
-        navigate("/login");
-      }
-    };
-    
-    fetchUser();
-  }, [navigate]);
-
-  React.useEffect(() => {
-    if (user && user.id) {
-      fetch(`http://localhost:4000/api/inventory/${user.id}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setInventory(data);
-
-          if (data.length === 0 && user.currency === 0) {
-            handleOpenCardPack(10, 0);
-          }
-        })
-        .catch((err) => console.error("Error loading inventory:", err));
+    if (contextUser) {
+      setUser(contextUser);
     }
-  }, [user?.id, user?.currency]);
+  }, [contextUser]);
 
-  const handleOpenCardPack = async (packSize = 5, packCost = 0) => {
-    // Check if user is loaded
-    if (!user) return;
-
+  const handleOpenCardPack = React.useCallback(async (packSize = 5, packCost = 0) => {
+    if (!user || !user.id) {
+      console.log("User not available for pack opening");
+      return;
+    }
+    
     try {
       const response = await fetch("http://localhost:4000/api/open-pack", {
         method: "POST",
@@ -126,25 +84,81 @@ export default function Home() {
       const data = await response.json();
 
       if (response.ok) {
-        // Set the new cards to modal
         setOpenCards(data.cards);
-        // Open popup
-        setIsModalOpen(true);
-        // Re-fetch inventory to show the new cards
-        const invRes = await fetch(
-          `http://localhost:4000/api/inventory/${user.id}`,
-        );
+        if (packSize === 10) {
+          setCardPackMessage("Welcome Starter Pack!");
+        } else if (packCost > 0) {
+          setCardPackMessage("5-Card Pack");
+        } else {
+          setCardPackMessage("Free Daily Pack!");
+        }        setIsModalOpen(true);
+        
+        const invRes = await fetch(`http://localhost:4000/api/inventory/${user.id}`);
         const invData = await invRes.json();
         setInventory(invData);
+        
+        // Update BOTH local and context user
+        const updatedUser = {
+          ...user,
+          currency: data.newCurrency,
+          lastDailyPack: new Date().toISOString(),
+        };
+        setUser(updatedUser);
+        setContextUser(updatedUser);
+        localStorage.setItem("user", JSON.stringify(updatedUser));
       } else {
-        // Handle errors
         alert(data.error || "Something went wrong opening the pack.");
       }
     } catch (error) {
       console.error("Fetch error:", error);
       alert("Could not connect to the server.");
     }
-  };
+  }, [user?.id, setContextUser]);
+
+  React.useEffect(() => {
+    const handleOpenPack = (event) => {
+      const { packSize, packCost } = event.detail;
+      handleOpenCardPack(packSize, packCost);
+    };
+
+    window.addEventListener("openPack", handleOpenPack);
+    return () => window.removeEventListener("openPack", handleOpenPack);
+  }, [handleOpenCardPack]);
+  
+  // Load inventory and trigger welcome/daily packs
+  React.useEffect(() => {
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+
+    if (user && user.id) {
+      fetch(`http://localhost:4000/api/inventory/${user.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          setInventory(data);
+
+          // Welcome pack: new user with empty inventory and 0 currency
+          if (data.length === 0 && user.currency === 0) {
+            console.log("Opening welcome pack for new user");
+            setCardPackMessage("Welcome Starter Pack!");
+            handleOpenCardPack(10, 0);
+          }
+
+          // // Daily pack: user has items and last pack was before today's midnight
+          else if (data.length > 0 && user.lastDailyPack) {
+            const lastPack = new Date(user.lastDailyPack);
+            lastPack.setHours(0, 0, 0, 0);
+            
+            if (lastPack < midnight) {
+              console.log("Opening daily pack - new day");
+              setCardPackMessage("Free Daily Pack!");
+              handleOpenCardPack(5, 0);
+            }
+          }
+        })
+        .catch((err) => console.error("Error loading inventory:", err));
+    }
+  }, [user?.id, user?.currency, handleOpenCardPack]);
+
 
   const handleSellCard = async (item) => {
     // Calculate sell price (Rating squared)
@@ -162,13 +176,16 @@ export default function Home() {
       });
 
       if (response.ok) {
-        // Update Currency
         const data = await response.json();
 
-        setUser((prev) => ({
-          ...prev,
+        // Update BOTH local state and context
+        const updatedUser = {
+          ...user,
           currency: data.newCurrency,
-        }));
+        };
+        setUser(updatedUser);
+        setContextUser(updatedUser);
+        localStorage.setItem("user", JSON.stringify(updatedUser));
 
         // Update Inventory UI
         setInventory((prev) => {
@@ -219,6 +236,28 @@ export default function Home() {
   const handleCloseSellDialog = () => {
     setIsSellDialogOpen(false);
     setSelectedCardMenuItem(null);
+  };
+
+  const handleToggleTrade = async (item) => {
+    const endpoint = item.isForTrade ? "remove" : "add";
+    
+    try {
+      const response = await fetch(`http://localhost:4000/api/trade-list/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, cardId: item.card.id }),
+      });
+  
+      if (response.ok) {
+        setInventory((prev) =>
+          prev.map((invItem) =>
+            invItem.id === item.id ? { ...invItem, isForTrade: !item.isForTrade } : invItem
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Trade toggle error:", error);
+    }
   };
 
   return (
@@ -331,9 +370,7 @@ export default function Home() {
             }}
           >
             <Typography variant="h4" sx={{ mb: 3, fontWeight: "bold" }}>
-              {openCards.length > 5
-                ? "Welcome Starter Pack!"
-                : "New Pack Opened!"}
+              {cardPackMessage}
             </Typography>
 
             <Grid container spacing={2} justifyContent="center">
@@ -397,9 +434,11 @@ export default function Home() {
         <MenuItem
           onClick={() => {
             handleCardMenuClose();
+            handleToggleTrade(selectedCardMenuItem);
           }}
         >
-          <InventoryIcon sx={{ mr: 1, fontSize: "small" }} /> Trade
+          <InventoryIcon sx={{ mr: 1, fontSize: "small" }} />
+          {selectedCardMenuItem?.isForTrade ? "Remove from Trade List" : "List for Trade"}
         </MenuItem>
 
         <MenuItem

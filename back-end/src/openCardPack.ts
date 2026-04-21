@@ -22,7 +22,7 @@ export async function openCardPack(userId: number, packSize: number = 5, packCos
     }
 
     // 2. Deduct the currency
-    await tx.user.update({
+    const updatedUser = await tx.user.update({
       where: { id: userId },
       data: { currency: { decrement: packCost } }
     });
@@ -51,6 +51,6 @@ export async function openCardPack(userId: number, packSize: number = 5, packCos
 
     await Promise.all(inventoryUpdates);
 
-    return { message: "Pack opened successfully!", cards: newCards };
+    return { message: "Pack opened successfully!", cards: newCards, newCurrency: updatedUser.currency };
   });
 }

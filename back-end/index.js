@@ -75,7 +75,9 @@ app.post("/register", async (req, res) => {
     });
 
     if (bannedEmail) {
-      return res.status(400).json("This email has been banned from the platform.");
+      return res
+        .status(400)
+        .json("This email has been banned from the platform.");
     }
 
     const existingUser = await prisma.user.findFirst({
@@ -201,6 +203,8 @@ app.post("/login", async (req, res) => {
       }
     });
 
+app.get("/api/inventory/:id", async (req, res) => {
+  const userId = parseInt(req.params.id);
 app.post("/forgot-password", async (req, res) => {
   const emailInput = (req.body.email || "").trim().toLowerCase();
   const usernameInput = (req.body.username || "").trim();
