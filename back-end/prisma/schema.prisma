@@ -9,31 +9,49 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url       = env("DIRECT_URL")    // app uses Accelerate
-  directUrl = env("DATABASE_URL")  // migrations & Studio use direct
+  provider  = "postgresql"
+  url       = env("DIRECT_URL") // app uses Accelerate
+  directUrl = env("DATABASE_URL") // migrations & Studio use direct
 }
 
 model User {
-  id            Int            @id @default(autoincrement())
-  email         String         @unique
-  username      String         @unique
+  id            Int       @id @default(autoincrement())
+  username      String    @unique
+  email         String    @unique
   password      String
-  bio           String? 
   profilePic    String?
-  currency      Int            @default(0)
-  isAdmin       Boolean        @default(false)
-  isPublic      Boolean        @default(false)
-  lastDailyPack DateTime       @default(now())
-  createdAt     DateTime       @default(now())
-  Inventory     Inventory[]
-  tradeList     TradeList[]
+  currency      Int       @default(0)
+  lastDailyPack DateTime?
+  isAdmin       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  inventory Inventory[]
+  tradeList TradeList[]
+
+  // Add these relation fields
+  sentTradeRequests     TradeRequest[] @relation("requester")
+  receivedTradeRequests TradeRequest[] @relation("receiver")
+
+  @@map("users")
 }
 
-model BannedEmail {
-  id    Int     @id @default(autoincrement())
-  email String  @unique
+model TradeRequest {
+  id          Int  @id @default(autoincrement())
+  requesterId Int
+  requester   User @relation("requester", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiverId  Int
+  receiver    User @relation("receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  requestedCardId Int
+  requestedCard   Card @relation("requestedCard", fields: [requestedCardId], references: [id])
+
+  offeredCardId Int
+  offeredCard   Card @relation("offeredCard", fields: [offeredCardId], references: [id])
+
+  status    String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
   createdAt DateTime @default(now())
+
+  @@unique([requesterId, receiverId, requestedCardId, offeredCardId])
 }
 
 model Card {
@@ -63,29 +81,42 @@ model Card {
   collectorNumber String?
   inventoryItems  Inventory[]
   tradeList       TradeList[]
+  requestedCards  TradeRequest[] @relation("requestedCard")
+  offeredCards    TradeRequest[] @relation("offeredCard")
+
+  @@map("cards")
 }
 
 model Inventory {
   id       Int  @id @default(autoincrement())
-  cardId   Int
   userId   Int
-  card     Card @relation(fields: [cardId], references: [id])
   user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId   Int
+  card     Card @relation(fields: [cardId], references: [id])
   quantity Int  @default(1)
 
   @@unique([userId, cardId])
+  @@map("inventory")
 }
 
 model TradeList {
-  id       Int         @id @default(autoincrement())
-  userId   Int
-  user     User        @relation(fields: [userId], references: [id])
-  cardId   Int
-  card     Card        @relation(fields: [cardId], references: [id])
-  quantity Int         @default(1)
-  status   TradeStatus @default(AVAILABLE)
+  id     Int    @id @default(autoincrement())
+  userId Int
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId Int
+  card   Card   @relation(fields: [cardId], references: [id])
+  status String @default("AVAILABLE")
 
   @@unique([userId, cardId])
+  @@map("trade_list")
+}
+
+model BannedEmail {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("banned_emails")
 }
 
 enum TradeStatus {

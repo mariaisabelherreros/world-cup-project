@@ -496,6 +496,7 @@ app.post("/api/sell-card", async (req, res) => {
       if (!inventoryItem) {
         throw new Error("Card not found in inventory");
       }
+
       if (inventoryItem.quantity > 1) {
         await tx.inventory.update({
           where: { id: inventoryItem.id },
@@ -505,9 +506,13 @@ app.post("/api/sell-card", async (req, res) => {
         await tx.inventory.delete({
           where: { id: inventoryItem.id },
         });
-
-        await tx.tradeList.deleteMany({ where: { userId, cardId } });
       }
+
+      // Remove from trade list if it exists
+      await tx.tradeList.deleteMany({
+        where: { userId, cardId }
+      });
+
       return updatedUser;
     });
     res.status(200).json({
@@ -580,6 +585,187 @@ app.delete("/admin/users/:id", async (req, res) => {
     res
       .status(500)
       .json({ error: "An error occurred while banning the user." });
+  }
+});
+
+// Get pending trade requests for a user
+app.get("/api/trade-requests/:userId", async (req, res) => {
+  try {
+    const tradeRequests = await prisma.tradeRequest.findMany({
+      where: {
+        receiverId: parseInt(req.params.userId),
+        status: "PENDING"
+      },
+      include: {
+        requester: { select: { id: true, username: true, profilePic: true } },
+        requestedCard: true,
+        offeredCard: true
+      }
+    });
+    res.json(tradeRequests);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch trade requests" });
+  }
+});
+
+app.post("/api/trade-requests", async (req, res) => {
+  const { requesterId, receiverId, requestedCardId, offeredCardId } = req.body;
+
+  try {
+    // Verify both cards exist and belong to correct users
+    const requestedCard = await prisma.inventory.findFirst({
+      where: { userId: receiverId, cardId: requestedCardId }
+    });
+
+    const offeredCard = await prisma.inventory.findFirst({
+      where: { userId: requesterId, cardId: offeredCardId }
+    });
+
+    if (!requestedCard || !offeredCard) {
+      return res.status(400).json({ error: "Invalid cards" });
+    }
+
+    const tradeRequest = await prisma.tradeRequest.create({
+      data: {
+        requesterId,
+        receiverId,
+        requestedCardId,
+        offeredCardId,
+        status: "PENDING"
+      },
+      include: {
+        requester: { select: { id: true, username: true } },
+        requestedCard: true,
+        offeredCard: true
+      }
+    });
+
+    res.status(201).json(tradeRequest);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to create trade request" });
+  }
+});
+
+app.post("/api/trade-requests/:id/accept", async (req, res) => {
+  try {
+    const tradeRequest = await prisma.tradeRequest.findUnique({
+      where: { id: parseInt(req.params.id) },
+      include: { requestedCard: true, offeredCard: true }
+    });
+
+    if (!tradeRequest) {
+      return res.status(404).json({ error: "Trade request not found" });
+    }
+
+    // Check inventory BEFORE transaction
+    const requesterInv = await prisma.inventory.findFirst({
+      where: { userId: tradeRequest.requesterId, cardId: tradeRequest.offeredCardId }
+    });
+
+    const receiverInv = await prisma.inventory.findFirst({
+      where: { userId: tradeRequest.receiverId, cardId: tradeRequest.requestedCardId }
+    });
+
+    if (!requesterInv || !receiverInv) {
+      return res.status(400).json({ error: "One or both cards no longer exist in inventory" });
+    }
+
+    // Now run transaction knowing items exist
+    await prisma.$transaction(async (tx) => {
+      // Decrement or delete requester's offered card
+      if (requesterInv.quantity > 1) {
+        await tx.inventory.update({
+          where: { id: requesterInv.id },
+          data: { quantity: { decrement: 1 } }
+        });
+      } else {
+        await tx.inventory.delete({ where: { id: requesterInv.id } });
+      }
+
+      // Decrement or delete receiver's requested card
+      if (receiverInv.quantity > 1) {
+        await tx.inventory.update({
+          where: { id: receiverInv.id },
+          data: { quantity: { decrement: 1 } }
+        });
+      } else {
+        await tx.inventory.delete({ where: { id: receiverInv.id } });
+      }
+
+      // Remove both cards from trade lists
+      await tx.tradeList.deleteMany({
+        where: {
+          OR: [
+            { userId: tradeRequest.requesterId, cardId: tradeRequest.offeredCardId },
+            { userId: tradeRequest.receiverId, cardId: tradeRequest.requestedCardId }
+          ]
+        }
+      });
+
+      // Create new inventory for both users
+      await tx.inventory.upsert({
+        where: {
+          userId_cardId: { userId: tradeRequest.requesterId, cardId: tradeRequest.requestedCardId }
+        },
+        create: { userId: tradeRequest.requesterId, cardId: tradeRequest.requestedCardId, quantity: 1 },
+        update: { quantity: { increment: 1 } }
+      });
+
+      await tx.inventory.upsert({
+        where: {
+          userId_cardId: { userId: tradeRequest.receiverId, cardId: tradeRequest.offeredCardId }
+        },
+        create: { userId: tradeRequest.receiverId, cardId: tradeRequest.offeredCardId, quantity: 1 },
+        update: { quantity: { increment: 1 } }
+      });
+
+      // Update trade request status
+      await tx.tradeRequest.update({
+        where: { id: parseInt(req.params.id) },
+        data: { status: "ACCEPTED" }
+      });
+    });
+
+    res.json({ message: "Trade accepted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message || "Failed to accept trade" });
+  }
+});
+
+app.post("/api/trade-requests/:id/reject", async (req, res) => {
+  try {
+    await prisma.tradeRequest.update({
+      where: { id: parseInt(req.params.id) },
+      data: { status: "REJECTED" }
+    });
+
+    res.json({ message: "Trade rejected" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to reject trade" });
+  }
+});
+
+app.get("/api/trade-requests/sent/:userId", async (req, res) => {
+  try {
+    const tradeRequests = await prisma.tradeRequest.findMany({
+      where: {
+        requesterId: parseInt(req.params.userId),
+        status: "PENDING"
+      },
+      include: {
+        receiver: { select: { id: true, username: true, profilePic: true } },
+        requestedCard: true,
+        offeredCard: true
+      }
+    });
+    res.json(tradeRequests);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch sent trade requests" });
   }
 });
 
