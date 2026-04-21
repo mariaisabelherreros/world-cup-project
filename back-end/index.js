@@ -203,9 +203,7 @@ app.post("/login", async (req, res) => {
       }
     });
 
-app.get("/api/inventory/:id", async (req, res) => {
-  const userId = parseInt(req.params.id);
-app.post("/forgot-password", async (req, res) => {
+    app.post("/forgot-password", async (req, res) => {
   const emailInput = (req.body.email || "").trim().toLowerCase();
   const usernameInput = (req.body.username || "").trim();
 
