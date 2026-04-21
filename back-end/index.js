@@ -1,8 +1,16 @@
-const { PrismaClient } = require("@prisma/client");
-const { withAccelerate } = require("@prisma/extension-accelerate");
+const { PrismaClient } = require('@prisma/client')
+const { withAccelerate } = require('@prisma/extension-accelerate');
+require("dotenv").config();
+
 const { openCardPack } = require("./src/openCardPack.ts");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+const RESET_PASSWORD_SECRET = process.env.RESET_PASSWORD_SECRET || JWT_SECRET;
+const RESET_PASSWORD_EXPIRES_IN = process.env.RESET_PASSWORD_EXPIRES_IN || "30m";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+const PORT = Number(process.env.PORT || 4000);
 
 const prisma = new PrismaClient().$extends(withAccelerate());
 
@@ -11,12 +19,48 @@ const cors = require("cors");
 const app = express();
 const bcrypt = require("bcrypt");
 const saltRounds = 10;
-const PORT = 4000;
+
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: SMTP_SECURE,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+})
+
+const logSentMail = (info, to, subject) => {
+  const previewUrl = nodemailer.getTestMessageUrl(info);
+  console.log("[MAIL] Forgot-password email sent");
+  console.log("  to:", to);
+  console.log("  subject:", subject);
+  console.log("  messageId:", info.messageId);
+  if (previewUrl) {
+    console.log("  preview:", previewUrl);
+  } else {
+    console.log("  response:", info.response || "(no SMTP response)");
+  }
+};
+
+const allowedOrigins = new Set([
+  FRONTEND_URL,
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+]);
 
 app.use(express.json());
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin(origin, callback) {
+      // Allow server-to-server requests with no Origin header.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
@@ -151,16 +195,204 @@ const authenticateToken = (req, res, next) => {
 
 app.get("/users/:id", authenticateToken, async (req, res) => {
   try {
+    const requestedId = parseInt(req.params.id, 10);
+
+    if (!Number.isInteger(requestedId)) {
+      return res.status(400).json({ ok: false, message: "Invalid user id" });
+    }
+
+    // Users can read their own record; admins can read any record.
+    const requesterId = Number(req.user.userId);
+    const requesterEmail = req.user.email;
+
+    if (requesterId !== requestedId) {
+      const requester = await prisma.user.findUnique({
+        where: { id: requesterId },
+        select: { isAdmin: true, email: true },
+      });
+
+      if (!requester || !requester.isAdmin || requester.email !== requesterEmail) {
+        return res.status(403).json({ ok: false, message: "Forbidden" });
+      }
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id: parseInt(req.params.id) },
+      where: { id: requestedId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        bio: true,
+        profilePic: true,
+        currency: true,
+        isAdmin: true,
+        isPublic: true,
+        createdAt: true,
+      },
     });
-    if (!user)
-      return res.status(404).json({ ok: false, message: "User not found" });
+
+    if (!user) return res.status(404).json({ok: false, message: "User not found"});
     res.json(user);
   } catch (error) {
-    res.status(500).json({ ok: false, message: "Failed to fetch user" });
+    res.status(500).json({ok: false, message: "Failed to fetch user"});
   }
 });
+
+app.patch("/users/me/profile", authenticateToken, async (req, res) => {
+  const bioInput = typeof req.body.bio === "string" ? req.body.bio : "";
+  const profilePicInput = typeof req.body.profilePic === "string" ? req.body.profilePic : "";
+
+  const bio = bioInput.trim().slice(0, 500);
+  const profilePic = profilePicInput.trim().slice(0, 1000);
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: Number(req.user.userId) },
+      data: {
+        bio,
+        profilePic: profilePic || null,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        bio: true,
+        profilePic: true,
+        currency: true,
+        isAdmin: true,
+        isPublic: true,
+        createdAt: true,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      message: "Profile updated successfully.",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to update profile right now.",
+    });
+  }
+});
+
+app.post("/users/me/change-password", authenticateToken, async (req, res) => {
+  const currentPassword = String(req.body.currentPassword || "");
+  const newPassword = String(req.body.newPassword || "");
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({
+      ok: false,
+      message: "Current and new password are required.",
+    });
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({
+      ok: false,
+      message: "New password must be at least 8 characters.",
+    });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: Number(req.user.userId) },
+      select: { id: true, password: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, message: "User not found." });
+    }
+
+    const matches = await bcrypt.compare(currentPassword, user.password);
+    if (!matches) {
+      return res.status(400).json({ ok: false, message: "Current password is incorrect." });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
+
+    return res.json({ ok: true, message: "Password changed successfully." });
+  } catch (error) {
+    console.error("Change password error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to change password right now.",
+    });
+  }
+});
+
+app.post("/forgot-password", async (req, res) => {
+  const emailInput = (req.body.email || "").trim().toLowerCase();
+  const usernameInput = (req.body.username || "").trim();
+
+  // Exactly one identifier must be provided.
+  if ((!emailInput && !usernameInput) || (emailInput && usernameInput)) {
+    return res.status(400).json({
+      ok: false,
+      message: "Provide either email or username.",
+    });
+  }
+
+  try {
+    const user = await prisma.user.findFirst({
+      where: emailInput ? { email: emailInput } : { username: usernameInput },
+    });
+
+    // Always return generic success to prevent account enumeration.
+    if (!user) {
+      return res.json({
+        ok: true,
+        message: "If an account exists, a reset email has been sent.",
+      });
+    }
+
+    const resetToken = jwt.sign(
+      {
+        purpose: "reset_password",
+        userId: user.id,
+        email: user.email,
+      },
+      RESET_PASSWORD_SECRET,
+      { expiresIn: RESET_PASSWORD_EXPIRES_IN },
+    );
+
+    const resetLink = `${FRONTEND_URL}/reset_password?token=${encodeURIComponent(
+      resetToken,
+    )}`;
+
+    const subject = "Reset your password";
+    const text = `Use this link to reset your password: ${resetLink}\nThis link expires in 30 minutes.`;
+    const html = `<p>Click to reset your password:</p><p><a href="${resetLink}">${resetLink}</a></p><p>This link expires in 30 minutes.</p>`;
+
+    const mailInfo = await mailer.sendMail({
+      from: process.env.MAIL_FROM || "no-reply@worldcup.local",
+      to: user.email,
+      subject,
+      text,
+      html,
+    });
+    logSentMail(mailInfo, user.email, subject);
+
+    return res.json({
+      ok: true,
+      message: "If an account exists, a reset email has been sent.",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to process request right now.",
+    });
+  }
+});
+
 
 app.get("/api/inventory/:id", async (req, res) => {
   const userId = parseInt(req.params.id);
@@ -262,7 +494,7 @@ app.post("/api/sell-card", async (req, res) => {
       if (!inventoryItem) {
         throw new Error("Card not found in inventory");
       }
-      
+
       if (inventoryItem.quantity > 1) {
         await tx.inventory.update({
           where: { id: inventoryItem.id },
@@ -273,12 +505,12 @@ app.post("/api/sell-card", async (req, res) => {
           where: { id: inventoryItem.id },
         });
       }
-      
+
       // Remove from trade list if it exists
       await tx.tradeList.deleteMany({
         where: { userId, cardId }
       });
-      
+
       return updatedUser;
     });
     res.status(200).json({
@@ -377,21 +609,21 @@ app.get("/api/trade-requests/:userId", async (req, res) => {
 
 app.post("/api/trade-requests", async (req, res) => {
   const { requesterId, receiverId, requestedCardId, offeredCardId } = req.body;
-  
+
   try {
     // Verify both cards exist and belong to correct users
     const requestedCard = await prisma.inventory.findFirst({
       where: { userId: receiverId, cardId: requestedCardId }
     });
-    
+
     const offeredCard = await prisma.inventory.findFirst({
       where: { userId: requesterId, cardId: offeredCardId }
     });
-    
+
     if (!requestedCard || !offeredCard) {
       return res.status(400).json({ error: "Invalid cards" });
     }
-    
+
     const tradeRequest = await prisma.tradeRequest.create({
       data: {
         requesterId,
@@ -406,7 +638,7 @@ app.post("/api/trade-requests", async (req, res) => {
         offeredCard: true
       }
     });
-    
+
     res.status(201).json(tradeRequest);
   } catch (error) {
     console.error(error);
@@ -420,7 +652,7 @@ app.post("/api/trade-requests/:id/accept", async (req, res) => {
       where: { id: parseInt(req.params.id) },
       include: { requestedCard: true, offeredCard: true }
     });
-    
+
     if (!tradeRequest) {
       return res.status(404).json({ error: "Trade request not found" });
     }
@@ -429,15 +661,15 @@ app.post("/api/trade-requests/:id/accept", async (req, res) => {
     const requesterInv = await prisma.inventory.findFirst({
       where: { userId: tradeRequest.requesterId, cardId: tradeRequest.offeredCardId }
     });
-    
+
     const receiverInv = await prisma.inventory.findFirst({
       where: { userId: tradeRequest.receiverId, cardId: tradeRequest.requestedCardId }
     });
-    
+
     if (!requesterInv || !receiverInv) {
       return res.status(400).json({ error: "One or both cards no longer exist in inventory" });
     }
-    
+
     // Now run transaction knowing items exist
     await prisma.$transaction(async (tx) => {
       // Decrement or delete requester's offered card
@@ -449,7 +681,7 @@ app.post("/api/trade-requests/:id/accept", async (req, res) => {
       } else {
         await tx.inventory.delete({ where: { id: requesterInv.id } });
       }
-      
+
       // Decrement or delete receiver's requested card
       if (receiverInv.quantity > 1) {
         await tx.inventory.update({
@@ -459,17 +691,17 @@ app.post("/api/trade-requests/:id/accept", async (req, res) => {
       } else {
         await tx.inventory.delete({ where: { id: receiverInv.id } });
       }
-      
+
       // Remove both cards from trade lists
       await tx.tradeList.deleteMany({
-        where: { 
+        where: {
           OR: [
             { userId: tradeRequest.requesterId, cardId: tradeRequest.offeredCardId },
             { userId: tradeRequest.receiverId, cardId: tradeRequest.requestedCardId }
           ]
         }
       });
-      
+
       // Create new inventory for both users
       await tx.inventory.upsert({
         where: {
@@ -478,7 +710,7 @@ app.post("/api/trade-requests/:id/accept", async (req, res) => {
         create: { userId: tradeRequest.requesterId, cardId: tradeRequest.requestedCardId, quantity: 1 },
         update: { quantity: { increment: 1 } }
       });
-      
+
       await tx.inventory.upsert({
         where: {
           userId_cardId: { userId: tradeRequest.receiverId, cardId: tradeRequest.offeredCardId }
@@ -486,14 +718,14 @@ app.post("/api/trade-requests/:id/accept", async (req, res) => {
         create: { userId: tradeRequest.receiverId, cardId: tradeRequest.offeredCardId, quantity: 1 },
         update: { quantity: { increment: 1 } }
       });
-      
+
       // Update trade request status
       await tx.tradeRequest.update({
         where: { id: parseInt(req.params.id) },
         data: { status: "ACCEPTED" }
       });
     });
-    
+
     res.json({ message: "Trade accepted" });
   } catch (error) {
     console.error(error);
@@ -507,7 +739,7 @@ app.post("/api/trade-requests/:id/reject", async (req, res) => {
       where: { id: parseInt(req.params.id) },
       data: { status: "REJECTED" }
     });
-    
+
     res.json({ message: "Trade rejected" });
   } catch (error) {
     console.error(error);
@@ -532,6 +764,70 @@ app.get("/api/trade-requests/sent/:userId", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to fetch sent trade requests" });
+  }
+});
+
+app.post("/reset_password", async (req, res) => {
+  const tokenInput = String(req.body.token || "").trim();
+  const newPassword = String(req.body.newPassword || "");
+
+  if (!tokenInput) {
+    return res.status(400).json({ ok: false, message: "Reset token is required." });
+  }
+
+  if (!newPassword || newPassword.length < 8) {
+    return res.status(400).json({
+      ok: false,
+      message: "Password must be at least 8 characters.",
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(tokenInput, RESET_PASSWORD_SECRET);
+
+    if (!decoded || decoded.purpose !== "reset_password" || !decoded.userId) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid or expired reset token.",
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: Number(decoded.userId) },
+      select: { id: true, email: true },
+    });
+
+    if (!user || (decoded.email && decoded.email !== user.email)) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid or expired reset token.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
+
+    return res.json({
+      ok: true,
+      message: "Password successfully reset, click here to return to login.",
+    });
+  } catch (error) {
+    if (error.name === "TokenExpiredError" || error.name === "JsonWebTokenError") {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid or expired reset token.",
+      });
+    }
+
+    console.error("Reset password error:", error);
+    return res.status(500).json({
+      ok: false,
+      message: "Unable to reset password right now.",
+    });
   }
 });
 

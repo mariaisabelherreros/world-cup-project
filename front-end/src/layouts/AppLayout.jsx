@@ -35,14 +35,22 @@ export default function AppLayout() {
   });
 
   const [profileMenuAnchor, setProfileMenuAnchor] = React.useState(null);
-  const [user, setUser] = React.useState(null);
+  const [user, setUser] = React.useState(() => {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  });
   const [snackbar, setSnackbar] = React.useState({ open: false, message: "", severity: "error" });
 
   const theme = React.useMemo(() => getTheme(mode), [mode]);
   const muiTheme = useMuiTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
 
-  const isPageAfterLogin = location.pathname !== "/login" && location.pathname !== "/register" && location.pathname !== "/forgot_password";
+  const publicAuthPages = new Set([
+    "/login",
+    "/register",
+    "/forgot_password",
+    "/reset_password",
+  ]);
+  const isPageAfterLogin = !publicAuthPages.has(location.pathname);
   const isHomePage = location.pathname === "/home";
 
   const toggleTheme = () => {
@@ -53,17 +61,6 @@ export default function AppLayout() {
     });
   };
 
-  React.useEffect(() => {
-    const storedUser = JSON.parse(localStorage.getItem("user"));
-    const token = localStorage.getItem("token");
-    
-    if (storedUser && token && isPageAfterLogin) {
-      fetchUserData(storedUser.id, token);
-    } else {
-      setUser(storedUser);
-    }
-  }, [isPageAfterLogin]);
-  
   const fetchUserData = async (userId, token) => {
     try {
       const response = await fetch(`http://localhost:4000/users/${userId}`, {
@@ -81,15 +78,33 @@ export default function AppLayout() {
     }
   };
 
+  React.useEffect(() => {
+    if (!isPageAfterLogin) return;
+
+    const storedUser = JSON.parse(localStorage.getItem("user") || "null");
+    const token = localStorage.getItem("token");
+
+    if (storedUser && token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchUserData(storedUser.id, token);
+    }
+  }, [isPageAfterLogin]);
+
   const handleProfileMenuOpen = (event) =>
     setProfileMenuAnchor(event.currentTarget);
 
   const handleProfileMenuClose = () => setProfileMenuAnchor(null);
 
+  const handleProfilePageClick = () => {
+    setProfileMenuAnchor(null);
+    navigate("/user");
+  };
+
   const handleLogout = () => {
     setProfileMenuAnchor(null);
     localStorage.removeItem("user");
     localStorage.removeItem("token");
+    setUser(null);
     navigate("/login");
   };
 
@@ -104,10 +119,10 @@ export default function AppLayout() {
     }
 
     if (user.currency < 10000) {
-      setSnackbar({ 
-        open: true, 
-        message: `Insufficient funds! You need 10,000 currency but only have ${user.currency}.`, 
-        severity: "error" 
+      setSnackbar({
+        open: true,
+        message: `Insufficient funds! You need 10,000 currency but only have ${user.currency}.`,
+        severity: "error"
       });
       return;
     }
@@ -147,8 +162,8 @@ export default function AppLayout() {
             px: isMobile ? 2 : 0,
             bgcolor: mode === "light" ? "#ffffff" : "#1a1a1a",
             borderBottom: mode === "light" ? "1px solid #e0e0e0" : "1px solid #333333",
-            boxShadow: mode === "light" 
-              ? "0 2px 8px rgba(0, 0, 0, 0.1)" 
+            boxShadow: mode === "light"
+              ? "0 2px 8px rgba(0, 0, 0, 0.1)"
               : "0 2px 8px rgba(0, 0, 0, 0.3)",
           }}
         >
@@ -185,10 +200,11 @@ export default function AppLayout() {
               gap: isMobile ? 2 : 0,
               px: isMobile ? 2 : 1,
               py: isMobile ? 2 : 1,
+              alignItems: "center",
               bgcolor: mode === "light" ? "#f5f5f5" : "#0d0d0d",
               borderBottom: mode === "light" ? "1px solid #e0e0e0" : "1px solid #333333",
-              boxShadow: mode === "light" 
-                ? "0 2px 4px rgba(0, 0, 0, 0.1)" 
+              boxShadow: mode === "light"
+                ? "0 2px 4px rgba(0, 0, 0, 0.1)"
                 : "0 2px 4px rgba(0, 0, 0, 0.3)",
             }}
           >
@@ -259,6 +275,8 @@ export default function AppLayout() {
                 sx={{
                   fontWeight: "bold",
                   textAlign: "center",
+                  px: 2,
+                  whiteSpace: "nowrap",
                   mr: 3,
                 }}
               >
@@ -280,7 +298,16 @@ export default function AppLayout() {
               </Typography>
             )}
 
-            <Box sx={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <Box
+              sx={{
+                position: "relative",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: isMobile ? "center" : "flex-end",
+                flex: isMobile ? "unset" : 1,
+                width: isMobile ? "100%" : "auto",
+              }}
+            >
               <Button
                 color="inherit"
                 onClick={handleProfileMenuOpen}
@@ -310,7 +337,7 @@ export default function AppLayout() {
                   }
                 }}
               >
-                <MenuItem onClick={handleProfileMenuClose}>
+                <MenuItem onClick={handleProfilePageClick}>
                   Profile Page
                 </MenuItem>
                 {user?.isAdmin && (
@@ -318,11 +345,11 @@ export default function AppLayout() {
                 )}
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
               </Menu>
-            </Box>
 
-            <IconButton onClick={toggleTheme} sx={{ ml: isMobile ? 0 : 2 }}>
-              {mode === "light" ? <DarkModeIcon /> : <LightModeIcon />}
-            </IconButton>
+              <IconButton onClick={toggleTheme} sx={{ ml: isMobile ? 0 : 2 }}>
+                {mode === "light" ? <DarkModeIcon /> : <LightModeIcon />}
+              </IconButton>
+            </Box>
           </Toolbar>
         )}
 

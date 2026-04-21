@@ -9,6 +9,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import MuiCard from '@mui/material/Card';
 import { styled } from '@mui/material/styles';
+import { useSearchParams } from 'react-router-dom';
 
 const Card = styled(MuiCard)(({ theme }) => ({
     display: 'flex',
@@ -29,32 +30,36 @@ const Card = styled(MuiCard)(({ theme }) => ({
     }),
 }));
 
-export default function ForgotPassword() {
-    const [identifierError, setIdentifierError] = React.useState(false);
-    const [identifierErrorMessage, setIdentifierErrorMessage] = React.useState('');
+export default function ResetPassword() {
+    const [searchParams] = useSearchParams();
+    const token = String(searchParams.get('token') || '').trim();
+
+    const [passwordError, setPasswordError] = React.useState(false);
+    const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
+    const [confirmError, setConfirmError] = React.useState(false);
+    const [confirmErrorMessage, setConfirmErrorMessage] = React.useState('');
     const [serverMessage, setServerMessage] = React.useState('');
 
-    const validateIdentifier = (identifier) => {
-        const value = identifier.trim();
+    const validateInputs = (password, confirmPassword) => {
+        setPasswordError(false);
+        setPasswordErrorMessage('');
+        setConfirmError(false);
+        setConfirmErrorMessage('');
 
-        setIdentifierError(false);
-        setIdentifierErrorMessage('');
-
-        if (!value) {
-            setIdentifierError(true);
-            setIdentifierErrorMessage('Enter your email or username.');
+        if (!token) {
+            setServerMessage('Invalid reset link. Please request another password reset.');
             return false;
         }
 
-        if (value.includes('@') && !/\S+@\S+\.\S+/.test(value)) {
-            setIdentifierError(true);
-            setIdentifierErrorMessage('Please enter a valid email address.');
+        if (!password || password.length < 8) {
+            setPasswordError(true);
+            setPasswordErrorMessage('Password must be at least 8 characters.');
             return false;
         }
 
-        if (!value.includes('@') && value.length < 3) {
-            setIdentifierError(true);
-            setIdentifierErrorMessage('Username must be at least 3 characters.');
+        if (password !== confirmPassword) {
+            setConfirmError(true);
+            setConfirmErrorMessage('Passwords do not match.');
             return false;
         }
 
@@ -67,19 +72,16 @@ export default function ForgotPassword() {
 
         const form = event.currentTarget;
         const data = new FormData(form);
-        const identifier = String(data.get('identifier') || '').trim();
+        const newPassword = String(data.get('newPassword') || '');
+        const confirmPassword = String(data.get('confirmPassword') || '');
 
-        if (!validateIdentifier(identifier)) return;
-
-        const payload = identifier.includes('@')
-            ? { email: identifier.toLowerCase() }
-            : { username: identifier };
+        if (!validateInputs(newPassword, confirmPassword)) return;
 
         try {
-            const response = await fetch('http://localhost:4000/forgot-password', {
+            const response = await fetch('http://localhost:4000/reset_password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({ token, newPassword }),
             });
 
             const rawBody = await response.text();
@@ -91,13 +93,13 @@ export default function ForgotPassword() {
             }
 
             if (response.ok && result.ok) {
-                setServerMessage(result.message || 'If an account exists, a reset email has been sent.');
-                form?.reset();
-            } else {
                 setServerMessage(
                     result.message ||
-                    `Request failed (${response.status}). Please try again.`
+                    'Password successfully reset, click here to return to login.'
                 );
+                form?.reset();
+            } else {
+                setServerMessage(result.message || `Request failed (${response.status}). Please try again.`);
             }
         } catch (error) {
             console.error('Server error:', error);
@@ -112,7 +114,7 @@ export default function ForgotPassword() {
                 variant="h4"
                 sx={{ fontSize: 'clamp(2rem, 10vw, 2.15rem)' }}
             >
-                Forgot Password?
+                Reset Password
             </Typography>
 
             <Box
@@ -120,18 +122,31 @@ export default function ForgotPassword() {
                 onSubmit={handleSubmit}
                 sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
             >
-                Enter your email or username to reset your password:
+                Enter your new password:
 
                 <FormControl>
-                    <FormLabel htmlFor="identifier">Email or username</FormLabel>
+                    <FormLabel htmlFor="newPassword">New password</FormLabel>
                     <TextField
-                        id="identifier"
-                        name="identifier"
+                        id="newPassword"
+                        name="newPassword"
+                        type="password"
                         fullWidth
-                        placeholder="your@email.com or username"
-                        autoComplete="username"
-                        error={identifierError}
-                        helperText={identifierErrorMessage}
+                        autoComplete="new-password"
+                        error={passwordError}
+                        helperText={passwordErrorMessage}
+                    />
+                </FormControl>
+
+                <FormControl>
+                    <FormLabel htmlFor="confirmPassword">Confirm new password</FormLabel>
+                    <TextField
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type="password"
+                        fullWidth
+                        autoComplete="new-password"
+                        error={confirmError}
+                        helperText={confirmErrorMessage}
                     />
                 </FormControl>
 
@@ -140,7 +155,7 @@ export default function ForgotPassword() {
                     fullWidth
                     variant="contained"
                 >
-                    Send reset link
+                    Update password
                 </Button>
 
                 {serverMessage && (
@@ -149,12 +164,20 @@ export default function ForgotPassword() {
                     </Typography>
                 )}
 
+                {serverMessage === 'Password successfully reset, click here to return to login.' && (
+                    <Typography sx={{ textAlign: 'center' }}>
+                        <Link href="/login" variant="body2">
+                            Click here to return to login.
+                        </Link>
+                    </Typography>
+                )}
+
                 <Divider />
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <Typography sx={{ textAlign: 'center' }}>
-                        Are you sure you're registered?{' '}
-                        <Link href="/register" variant="body2">
-                            Click here to sign up!
+                        Remembered your password?{' '}
+                        <Link href="/login" variant="body2">
+                            Back to login
                         </Link>
                     </Typography>
                 </Box>
