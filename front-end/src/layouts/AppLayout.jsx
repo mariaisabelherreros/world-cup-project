@@ -4,7 +4,6 @@ import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
@@ -44,7 +43,6 @@ export default function AppLayout() {
   const theme = React.useMemo(() => getTheme(mode), [mode]);
   const muiTheme = useMuiTheme();
   const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'));
-  const isTablet = useMediaQuery(muiTheme.breakpoints.down('md'));
 
   const publicAuthPages = new Set([
     "/login",
@@ -63,17 +61,6 @@ export default function AppLayout() {
     });
   };
 
-  React.useEffect(() => {
-    const storedUser = JSON.parse(localStorage.getItem("user"));
-    const token = localStorage.getItem("token");
-    
-    if (storedUser && token && isPageAfterLogin) {
-      fetchUserData(storedUser.id, token);
-    } else {
-      setUser(storedUser);
-    }
-  }, [isPageAfterLogin]);
-  
   const fetchUserData = async (userId, token) => {
     try {
       const response = await fetch(`http://localhost:4000/users/${userId}`, {
@@ -98,6 +85,7 @@ export default function AppLayout() {
     const token = localStorage.getItem("token");
 
     if (storedUser && token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchUserData(storedUser.id, token);
     }
   }, [isPageAfterLogin]);
@@ -357,7 +345,6 @@ export default function AppLayout() {
                 )}
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
               </Menu>
-            </Box>
 
               <IconButton onClick={toggleTheme} sx={{ ml: isMobile ? 0 : 2 }}>
                 {mode === "light" ? <DarkModeIcon /> : <LightModeIcon />}

@@ -193,53 +193,51 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-    app.get("/users/:id", authenticateToken, async (req, res) => {
-      try {
-        const requestedId = parseInt(req.params.id, 10);
+app.get("/users/:id", authenticateToken, async (req, res) => {
+  try {
+    const requestedId = parseInt(req.params.id, 10);
 
-        if (!Number.isInteger(requestedId)) {
-          return res.status(400).json({ ok: false, message: "Invalid user id" });
-        }
+    if (!Number.isInteger(requestedId)) {
+      return res.status(400).json({ ok: false, message: "Invalid user id" });
+    }
 
-        // Users can read their own record; admins can read any record.
-        const requesterId = Number(req.user.userId);
-        const requesterEmail = req.user.email;
+    // Users can read their own record; admins can read any record.
+    const requesterId = Number(req.user.userId);
+    const requesterEmail = req.user.email;
 
-        if (requesterId !== requestedId) {
-          const requester = await prisma.user.findUnique({
-            where: { id: requesterId },
-            select: { isAdmin: true, email: true },
-          });
+    if (requesterId !== requestedId) {
+      const requester = await prisma.user.findUnique({
+        where: { id: requesterId },
+        select: { isAdmin: true, email: true },
+      });
 
-          if (!requester || !requester.isAdmin || requester.email !== requesterEmail) {
-            return res.status(403).json({ ok: false, message: "Forbidden" });
-          }
-        }
-
-        const user = await prisma.user.findUnique({
-          where: { id: requestedId },
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            bio: true,
-            profilePic: true,
-            currency: true,
-            isAdmin: true,
-            isPublic: true,
-            createdAt: true,
-          },
-        });
-
-        if (!user) return res.status(404).json({ok: false, message: "User not found"});
-        res.json(user);
-      } catch (error) {
-        res.status(500).json({ok: false, message: "Failed to fetch user"});
+      if (!requester || !requester.isAdmin || requester.email !== requesterEmail) {
+        return res.status(403).json({ ok: false, message: "Forbidden" });
       }
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: requestedId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        bio: true,
+        profilePic: true,
+        currency: true,
+        isAdmin: true,
+        isPublic: true,
+        createdAt: true,
+      },
     });
 
-app.get("/api/inventory/:id", async (req, res) => {
-  const userId = parseInt(req.params.id);
+    if (!user) return res.status(404).json({ok: false, message: "User not found"});
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ok: false, message: "Failed to fetch user"});
+  }
+});
+
 app.patch("/users/me/profile", authenticateToken, async (req, res) => {
   const bioInput = typeof req.body.bio === "string" ? req.body.bio : "";
   const profilePicInput = typeof req.body.profilePic === "string" ? req.body.profilePic : "";
